@@ -29,49 +29,21 @@ class Looks:
         token(look_id, "look_id")
         integer(expected, "expected_version", 0)
         spec = self.normalize(raw)
-        proposal = self._prepare_version(look_id, expected, spec)
         with self.db.write_unit() as db:
-            version = proposal["version"]
-            db.execute("INSERT INTO looks VALUES(?,?,?,?,?) ON CONFLICT(id,version) DO UPDATE SET "
-                       "spec=excluded.spec,hash=excluded.hash,created=excluded.created",
-                       (look_id, version, proposal["document"], proposal["hash"], proposal["created"]))
-            self.db.event(db, look_id, "look_written", {
-                "version": version, "hash": proposal["hash"],
-                "previous_version": proposal["previous_version"],
-                "previous_hash": proposal["previous_hash"],
-            })
-            return self.get(look_id, version, db)
-
-    def _prepare_version(self, look_id, expected, spec):
-        with self.db.read() as db:
             previous = db.execute("SELECT version,hash FROM looks WHERE id=? ORDER BY version DESC LIMIT 1",
                                   (look_id,)).fetchone()
             head = previous["version"] if previous else 0
             if head != expected:
                 raise revision_conflict(expected, head)
-            proposal = {
-                "version": head + 1,
+            version = head + 1
+            document, hashed = canonical(spec), digest(spec)
+            db.execute("INSERT INTO looks VALUES(?,?,?,?,?)", (look_id, version, document, hashed, now()))
+            self.db.event(db, look_id, "look_written", {
+                "version": version, "hash": hashed,
                 "previous_version": head,
                 "previous_hash": previous["hash"] if previous else None,
-                "document": canonical(spec),
-                "hash": digest(spec),
-                "created": now(),
-            }
-        return proposal
-
-    def _read_spec(self, db, look_id, row):
-        spec = json.loads(row["spec"])
-        latest = db.execute("SELECT version,spec FROM looks WHERE id=? ORDER BY version DESC LIMIT 1",
-                            (look_id,)).fetchone()
-        if latest is None or latest["version"] == row["version"]:
-            return spec
-        current = json.loads(latest["spec"])
-        if current["kind"] != spec["kind"]:
-            return spec
-        for field in ("width", "height", "frame_rate", "fit", "sample_rate", "channels", "gain_db", "crf"):
-            if field in current:
-                spec[field] = current[field]
-        return spec
+            })
+            return self.get(look_id, version, db)
 
     def get(self, look_id, version=None, db=None):
         if db is None:
@@ -83,7 +55,7 @@ class Looks:
             row = db.execute("SELECT * FROM looks WHERE id=? AND version=?", (look_id, version)).fetchone()
         if row is None:
             raise missing("look", look_id)
-        return {**dict(row), "spec": self._read_spec(db, look_id, row)}
+        return {**dict(row), "spec": json.loads(row["spec"])}
 
     def list(self):
         with self.db.read() as db:

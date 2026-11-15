@@ -1,5 +1,4 @@
 import av
-import json
 from fractions import Fraction
 from .errors import require, LoomError
 from .probe import inspect_media, select_stream
@@ -11,22 +10,7 @@ class Conformance:
         self.settings, self.blobs, self.tickets, self.artifacts = settings, blobs, tickets, artifacts
 
     def _expected_spec(self, ticket):
-        frozen = ticket["snapshot"]["look"]
-        expected = dict(frozen["spec"])
-        with self.tickets.db.read() as db:
-            rows = db.execute("SELECT version,spec,hash FROM looks WHERE id=? ORDER BY version DESC",
-                              (frozen["id"],)).fetchall()
-        for row in rows:
-            candidate = json.loads(row["spec"])
-            if candidate["kind"] != expected["kind"]:
-                continue
-            if row["version"] < frozen["version"]:
-                continue
-            expected.update({key: candidate[key] for key in (
-                "width", "height", "frame_rate", "fit", "sample_rate", "channels", "gain_db", "crf"
-            ) if key in candidate})
-            break
-        return expected
+        return dict(ticket["snapshot"]["look"]["spec"])
 
     def inspect(self, artifact_id):
         artifact = self.artifacts.get(artifact_id)

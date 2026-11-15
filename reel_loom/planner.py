@@ -28,25 +28,8 @@ class Planner:
                     "sources": closure}
         return {**snapshot, "fingerprint": digest(snapshot)}
 
-    def _execution_spec(self, snapshot):
-        frozen = snapshot["look"]
-        spec = dict(frozen["spec"])
-        current = self.looks.get(frozen["id"])
-        if current["version"] <= frozen["version"]:
-            return spec
-        candidate = current["spec"]
-        if candidate["kind"] != spec["kind"]:
-            return spec
-        geometry = ("width", "height", "frame_rate", "fit")
-        sound = ("sample_rate", "channels", "gain_db")
-        encoding = ("crf",)
-        for group in (geometry, sound, encoding):
-            values = {name: candidate[name] for name in group if name in candidate}
-            spec.update(values)
-        return spec
-
     def compile(self, snapshot, resolve, output):
-        spec = self._execution_spec(snapshot)
+        spec = snapshot["look"]["spec"]
         args, filters, segments = [], [], []
         for i, item in enumerate(snapshot["document"]["slices"]):
             asset = snapshot["sources"][item["asset"]]
